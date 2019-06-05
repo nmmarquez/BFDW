@@ -1,0 +1,463 @@
+---
+title: "Applying the Gravity Model: A Worked Example"
+author: Josh Goldstein
+date: 30 May 2019
+output: html_notebook
+---
+
+# Overview
+
+This notebook contains a worked example of applying the gravity model
+to U.S. inter-state migration patterns using the American Community
+Survey (ACS), a kind of micro-census, from 2017.
+
+The 2017 ACS is about a 1-in-100 sample of the U.S. population. The
+sample is weighted, but for simplicity we are going to analyze the
+sample only, without considering the weights.
+
+
+Our ACS data is downloaded from IPUMS. The main variable we are
+interested in is `migplace1`, respondents answer to where they lived 1
+year (12 months) before the survey. If you are interested in the exact
+definitions of this or any of the other variables, see
+https://usa.ipums.org/usa-action/variables/group
+
+
+Our plan is to work through this R notebook together, discussing the
+pre-prepared questions, along with any other question that come up.
+
+My goal is for you to have a good understanding of how to estimate and
+interpret the gravity model by the end of notebook. 
+
+In the next notebook, which we'll do after lunch, we'll delve
+into a number of possible directions for the small group project. 
+
+# Preliminaries
+
+```{r}
+## load libraries
+library(data.table) ## for streamlining data processing (an alternative to base-R and tidyverse)
+library(memisc) ## for viewing regression results
+library(maps) ## for making maps
+library(readstata13) ## for reading in ACS data
+library(tools) ## to make some of the functions work
+```
+
+Note: if any of these `library()` commands don't work, it probably means
+you need to install the packages using a command like the
+following. (I'm not putting these in a code block. To run them you
+will have to do this (and remove the ">"s)
+
+>  # the install.packages() command will download from internet and install
+>  install.packages("data.table") # note: quotation marks here
+> # After you've installed a package, you have to retry the library command
+>  library(data.table) # note: no quotation marks here
+
+
+I've written some functions to spare you some of the sausage-making of
+the formatting the data and such.
+
+```{r}
+## load pre-written functions from the workshop website
+source("https://courses.demog.berkeley.edu/_formaldemog2019/Labs/project_map_functions.R")
+source("https://courses.demog.berkeley.edu/_formaldemog2019/Labs/project_data_prep_functions.R")
+```
+
+# Preparing the data
+
+Now we're ready to read in the data and prepare it. 
+
+First let's read in the data from the website. (This takes a minute,
+and gives no feedback. So, be patient.)
+
+
+
+```{r}
+## read in individual level ACS data (It's in stata format from IPUMS,
+## which has the advantage of having all of the variable levels
+## encoded into the data -- and so it's rather
+## self-documenting. However, it needs to be read using a special
+## function -- and then converted to a data.table for the purposes of
+## this code.)
+if(!file.exists("../data/dt.Rds")){
+    my.df <- readstata13::read.dta13("https://courses.demog.berkeley.edu/_formaldemog2019/Labs/usa_00180.dta")
+
+    ## (can ignore duplicated factor warning)
+    dt <- as.data.table(my.df) ## converts to data.table
+    print(dt) ## view
+    
+    saveRDS(dt, "../data/dt.Rds")
+}
+
+## (can ignore duplicated factor warning)
+dt <- readRDS("../data/dt.Rds")
+
+gdppcDF <- paste0(
+    "https://en.wikipedia.org/wiki/",
+    "List_of_U.S._states_by_GDP_per_capita") %>%
+    GET() %>%
+    content("text") %>%
+    {readHTMLTable(doc=., header=T)} %>%
+    .[[1]] %>%
+    mutate_if(is.factor, as.character) %>%
+    gather("Year", "GDPPC", -Rank, -State) %>%
+    mutate(Year=as.numeric(sub("\\n", "", Year))) %>%
+    mutate(GDPPC=as.numeric(sub(",", "", GDPPC))) %>%
+    mutate_if(is.factor, as.character)
+
+
+
+```
+
+So these are the individual records from the ACS.
+
+Lets just look at the variable names for a second to get some
+familiarity with the data. We won't be using most of this now, but you
+can for your group projects.
+
+```{r}
+names(dt)
+```
+
+Now we go through a few steps that tabulate the individual records
+into a form that gives the number of migrants from every state to
+every other state. Each row represents a particular origin-destination
+combination. E.g. from New York (origin) to California (destination)
+
+This code also adds a distance measure (euclidian distance in terms of
+latitude and longitude of state centers).
+
+Finally, the code also does a few extra things you (hopefully) don't
+need to know about.
+
+```{r}
+## clean up ACS, assigning origin and destination for movers, and restricting to 50 states
+dt.clean <- clean.acs.data(indiv.dt = dt)
+nrow(dt.clean)
+## transform indivdiual level data into aggregate data for gravity modeling
+grav.dt <- create.gravity.data(my.dt = dt.clean) ##
+nrow(grav.dt) ## should be 50x50 = 2500 rows
+## merge in distance measure
+grav.dt <- add.distance.variable.to.gravity.data(grav.dt = grav.dt)
+print(grav.dt) ## check if distance column is there
+## Note: if you have columns named "distance.x" and "distance.y"", then try rerunning this whole code chunk (using green "play" arrow). This should give you a data set with only one "distance" variable
+```
+
+> Q for you: What is the difference between N and Mi and Mj and Fij?
+
+> Your turn to ask questions: Any questions for me?
+
+## Exploring the data
+
+```{r}
+## look at histogram of moves
+hist(log(grav.dt$Fij))
+```
+
+> Qs for you about the histogram
+> 1. What happens to histogram if we don't take log?
+> 2. Do we see what happens to log(Fij) if Fij = 0?
+> 3. What do you think using Fij and log(Fij) as dependent variables
+>    in a regression?
+
+## Gravity Model Estimation Using Regression
+
+Now we'll look at two ways to estimate the gravity model
+parameters. There are also more complicated ways, but these two are a
+good starting point.
+
+### (1) ordinary regression on logs
+
+Take the logarithm of both sides of the gravity model:
+$$
+ F_{ij} =  g \cdot { {M_i}^\alpha  \cdot {M_j}^\beta \over { d_{ij} }^\gamma }
+$$
+
+
+> Qs for you: 
+> 1) Is the  resulting equation linear (in logs)?
+> 2) Do we model the data or the logarithmic transformation of the data?
+> 3) Are the estimated parameters going to be the $g$, $\alpha$,
+>    $\beta$, and $\gamma$, or, rather, the logarithm of these
+>    quantities?
+
+Ok, now we're ready to try estimation using ordinary least squares on
+the logarithm of the data.  We need to drop cases when Fij equals
+zero, otherwise we'll get an error.
+
+Let's model, dropping for Fij == 0
+```{r}
+m.lm <- lm(
+    log(Fij) ~ 1 + log(Mi) + log(Mj) + log(distance), # R-style model formula, 1 is "intercept"
+    data = grav.dt,
+    subset = Fij > 0)
+```
+
+> Q for you. Try re-running without the subset = Fij > 0 command. What
+> happens?
+
+We can now view the model results
+```{r}
+## view model results
+mtable(m.lm, summary.stats = "N")
+```
+
+> Q for you. Try rerunning with option "summary.stats = TRUE""
+
+### (2) Poisson Regression
+
+A motivation for using Poisson regression is because it allows us to
+include zeros. If we exclude them then we're throwing away real
+information that there were no migrants from a particular
+origin-destination (or so few in the population that we didn't get any
+in the sample.)
+
+The Poisson regression counts zeros as informative outcomes where
+there were zero events.
+
+-- a related advantage of Poisson regression is that produces
+   non-negative predictions
+
+-- some disadvantages include: more complicated; strong variance
+   assumptions; ... and?
+
+In R, the `glm()` command with `family = poisson(link = "log")` will
+do a poissson regression for us. The "log" link means that the
+dependent variable will be modeled on the log scale.
+
+For example, 
+> glm(Y ~ 1 + x1 + x2, family = poisson(link = "log"))
+means
+> log(Y) is modeled as  b0 + b1*x1 + b2*x2
+
+Let's get on with it!
+
+```{r}
+## fit poisson model
+m.pois <- glm(
+    Fij ~ 1 + log(Mi) + log(Mj) + log(distance),
+    family = poisson(link = "log"),
+    data = grav.dt,
+    subset = Fij >= 0)
+mtable(m.pois, summary.stats = "N") # view results
+```
+
+Let's check to see if we get about the same thing using OLS on log(Fij),
+
+```{r}
+mtable(m.lm, m.pois, summary.stats = "N")
+```
+
+> Qs for you:
+
+> 1. Do we need to worry about log(Fij) and Fij in the regression
+>    table with the two models?
+> 2. Does it make sense that interecept is lower for m.pois
+> 3. Are we in same ballpark on coefficients?
+
+> *BIG PICTURE CONCLUSION*
+> For your project, you can use either of these approaches -- or even
+> fancier methods -- but for the rest of this example, I'm going to
+> use poisson regression.
+
+> Any questions for me?
+
+
+# Interpreting the fitted coefficients of the gravity model
+
+In order to better understand the coefficients, we'll focus on
+predictions from the model for moves from New York to California.
+
+```{r}
+## first we do predictions for every origin-destination combination
+grav.dt$log.Fij.hat <- predict(m.pois, newdata = grav.dt)
+grav.dt$Fij.hat <- exp(grav.dt$log.Fij.hat)
+print(grav.dt)
+## let's clean up just a bit to keep easy to read
+grav.dt$log.Fij.hat <- NULL
+grav.dt$Fij.hat <- round(grav.dt$Fij.hat, 1)
+
+## now we look at NY --> CA
+grav.dt[origin == "new york" & destination == "california",]
+```
+
+Let's see if we can reproduce the Fij.hat value of 154.3
+from the Mi, Mj, distance, and the coefficients of our model
+
+```{r}
+mtable(m.pois, summary.stats = "N")
+```
+
+Here's some pseudo-code to get you started
+```{r}
+## hint:
+my.log.moves.hat <- -13.891 + 0.888 * log(196634) + 0.860*log(375557) - .770 * log(45.11379) 
+exp(my.log.moves.hat)
+```
+
+> Q for you: did every one get the right answer?
+
+# More on interpreting coefficients
+
+Here we're going to restrict ourselves to looking at destinations of
+people migrating from New York.
+
+## (1) Let's look at migration from New York by distance
+
+The idea here is to plot Fij as a function of distance and see if we
+can find a relationship that resembles the regression coefficients we
+estimated.
+
+```{r}
+## plot number of out migrants from new york by distance (with logarithm x and y axes)
+grav.dt[origin == "new york", plot(distance, Fij, log = "xy")]
+
+## now do this again, but in a slightly different way so we can add the slope
+grav.dt[origin == "new york", plot(log(distance), log(Fij))]
+## estimate a straight line
+m.ny.distance <- lm(log(Fij) ~ log(distance),
+            data = grav.dt,
+            subset = origin == "new york" & Fij > 0)
+## plot it
+abline(m.ny.distance)
+## add state labels
+grav.dt[origin == "new york", text(log(distance), log(Fij), labels = destination,
+                                   cex = .8, pos = 1)]
+```
+```{r}
+## display the slope of the line
+mtable(m.ny.distance, m.pois)
+```
+> Qs for you:
+> 1. What is the slope of the line? How does it compare to the gravity model coefficients?
+> 2. From the plot, what do the states with more than expected migration have in
+>    common?  (And what about those with less than expected?)
+> 3. Does this all make sense?
+
+## (2) Now let's look at migration from New York by size
+
+We left out size in the earlier analysis. Now we'll look at size, this
+time leaving out distance.
+
+```{r}
+## plot number of migrants by size of destination
+grav.dt[origin == "new york", plot(log(Mj), log(Fij))]
+m.ny.size <- lm(log(Fij) ~ log(Mj),
+            data = grav.dt,
+            subset = origin == "new york" & Fij > 0)
+abline(m.ny.size)
+## add state labels
+grav.dt[origin == "new york", text(log(Mj), log(Fij), labels = destination,
+                                   cex = .8, pos = 1)]
+```
+
+And let's view the coefficients. All together now, ...
+
+```{r}
+mtable(m.ny.distance, m.ny.size, m.pois, summary.stats = F)
+```
+
+> Minor Q: Why is standard error smaller with m.pois?
+
+> Invitation: Any questions for me?
+
+
+# Visualizing "demographic distance" (my term) 
+
+Let's think of states that are "demographically close" as those that
+have more migrants flowing between them than would be expected from
+gravity model.  Likewise, let's think of "demographically far"
+origin-destination states as fewer migrants than predicted from
+gravity model.
+
+The cultural idea is found in Saul Steinberg's, "The View from 9th Avenue"
+ https://brilliantmaps.com/new-yorkers-world/
+
+> Q. What states would Steinberg predict to be demographically close to NY?
+
+
+## Creating a "demographic distance" variable
+
+Let's define demographic distance as the extent to which there is more
+migration observed than we would expect from the gravity
+model. Formally, we can let it be the ratio of observed migrants to
+expected migrants.
+
+```{r}
+## calculate demographic distance
+grav.dt$demographic.distance <- grav.dt$Fij / grav.dt$Fij.hat
+## round to ease viewing
+grav.dt$demographic.distance <- round(grav.dt$demographic.distance, 2)
+```
+
+Now let's focus on destinations of people leaving New York
+
+```{r}
+## let's look at New York destinations
+dd.ny.as.origin <- grav.dt[origin == "new york", .(destination, demographic.distance)]
+## now display
+dd.ny.as.origin[order(demographic.distance)]
+```
+
+> Qs for you
+> 1. Why is there an NA for "new york"? Did we make a mistake?
+> 2. Which state is demographically closer to NY: "iowa" or "florida"?
+>    Does this make sense?
+> 3. Let's check demographic.distance for NY --> California "by hand".
+> 4. What would a map look like? Are there certain regions that are
+>    "close" and "far" from NY?
+> 5. How could we do demographic distance _to_ NY from other states?
+
+
+## Mapping
+
+Let's display demographic distance on a map.
+
+First let's just look at the counts of migrants from New York. These
+are the observed Fij.
+
+```{r}
+Fij.ny.as.origin.vec <- grav.dt[origin == "new york"]$Fij
+names(Fij.ny.as.origin.vec) <- grav.dt[origin == "new york"]$destination
+## draw map using custom function
+draw.usa.map(Fij.ny.as.origin.vec,
+             breaks = quantile(Fij.ny.as.origin.vec, na.rm = T),
+             colors = c("red", "pink", "lightblue", "blue", "darkblue"),
+             main = "Migrants by Destinations from New York \n Darkblue is 'lots', darkred is 'little'")
+```
+
+> Note: popular destinations tend to be big states like TX, FL, CA, PA, OH.
+> Note: unpopular destinations are mostly sparsely populated and/or far away. 
+
+Let's see what happens when we take into account both distance and
+destination size with the gravity model.
+
+
+```{r}
+## we create a vector of demographic distances, with labels for each state
+demographic.distance.ny.vec <- grav.dt[origin == "new york"]$demographic.distance
+names(demographic.distance.ny.vec) <- grav.dt[origin == "new york"]$destination
+
+##
+draw.usa.map(demographic.distance.ny.vec,
+             main = "'Demographic Distance' of Destinations from New York\n
+Ratios of observed migration to prediction from gravity model")
+```
+> Qs for you
+> 1. What are the main differences between the two maps?
+> 2. What happens to Texas?
+> 3. What happens to Washington state?
+> 4. What happens to Ohio?
+> 5. Was Saul Steinberg right?
+> 6. What would we predict for view from California?
+> 7. What would we predict for the view from Alabama?
+> 8. Would demographic distances of origins be similar to that of
+>    destinations?  (Can we think of a state that might differ, where
+>    origin distances and destination distances might be quite
+>    different?)
+
+
+# Congratulations!!! 
+
+We've finished our overview of the gravity model. Next stop: small
+group projects.

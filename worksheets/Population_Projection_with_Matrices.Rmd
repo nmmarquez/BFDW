@@ -1,0 +1,277 @@
+---
+title: "Population Projection with Matrices in R: Preparation for BFDW 2019"
+author: "Joshua R. Goldstein"
+date: "May 7, 2019"
+output: html_notebook
+---
+
+In this R notebook, I give some examples of how to do population projection using matrices using R. The emphasis here is on the programming, not on how to estimate and interpret these matrices. (We'll do lots of that at the workshop!)
+
+Here's our agenda. 
+
+* how to create a matrix in R
+* how to access it's rows and columns, and individual elements
+* how to do matrix multiplication
+* how to do an age-based population projection with a constant projection matrix
+* how to find the stable population structure using simulation
+* how to find the stable population structure using the eigen() function
+
+There are small exercises for each section. 
+
+# Creating a matrix
+
+Here we create a 3x3 matrix for projecting a population with three age groups. Demographers usually work with 1, 5, or 10 year age groups. But to keep our matrix small, we'll work with broader groups, which you could think of as representing ages 0-24, 25-49, and 50-74.
+
+We'll begin by creating a matrix $A$ that has the form,
+
+$$
+{\bf A} = 
+\begin{pmatrix} .6 & .8 & 0 \\
+.9 & 0 & 0 \\ 
+0 & .7 & 0
+\end{pmatrix}
+$$
+
+If this doesn't display nicely, then what I mean is
+
+    .6 .8  0
+A = .9  0  0
+     0 .7  0
+     
+
+In R, we write
+```{r}
+A <- matrix(data = c(.6, .8, 0,
+                     .9,  0, 0,
+                      0, .7, 0), 
+            ncol = 3, 
+            nrow = 3,
+            byrow = TRUE)
+## I put line breaks after each row, just to make it readable for humans (the machine doesn't care).
+## Note: it's important to specify "byrow = TRUE", because the default for R is to read columnwise.
+## Note: the data is of type vector: c(...)
+```
+
+We can display
+```{r}
+print(A)
+```
+
+Exercises:
+
+1. Change the byrow option and see what happens
+2. Create a 5x7 matrix full of NAs.
+(Hint: this might work with simply "data = NA", instead of having to type out "c(NA, NA, ... )"[35 times])
+
+# Accessing rows, columns and elements
+
+```{r}
+## to select the 1st row
+print("first row")
+A[1,]
+## to select the 2nd column
+print("2nd column")
+A[,2]
+## to select the element in the 3rd row and 2nd column
+print("the element I want")
+A[3,2]
+```
+
+Note: the elements we index, no matter if they are rows or columns, get transformed upon indexing into just a regular vector and don't retain their vertical or horizontal formatting.
+
+Exercises:
+
+1. Select the 1st column
+2. Select the 2nd row
+3. Select the element in the 1st column and 2nd row
+4. Select the elements in the 1st and 2nd columns and the second row.
+(Hint: index the columns with c(1:2))
+
+# Matrix multiplication
+
+Say we want to get A times A. If we write "A*A", R will multiply element-wise, not do matrix multiplication.
+
+```{r}
+print(A*A)
+## this is just squares each element
+```
+
+To get the matrix product
+```{r}
+print(A %*% A)
+```
+
+Yes! This is more like it.
+
+[Note: for a refresher of matrix multiplication, see https://en.wikipedia.org/wiki/Matrix_multiplication#Definition 
+or the video
+https://www.khanacademy.org/math/precalculus/precalc-matrices/multiplying-matrices-by-matrices/v/matrix-multiplication-intro ]
+
+
+# Population projection as matrix multiplication
+
+The population projection matrix can be thought of as an input-output table. It tells us how many people we "output" in age group "i" per person we "input" in age group "j". The columns are the age groups of the inputs and the rows are the age groups of the outputs.
+
+So, for example, in the matrix A
+```{r}
+print(A)
+```
+the element A[1,2] = 0.8, tells us we get 0.8 individuals in the 1st age group, per person we start with in the 2nd age group. The entire first row is _fertility_. 
+
+The element A[2,1] = 0.9 tells us that we get 0.9 individuals in the 2nd age group, per person we start with in the first age group. The entire "sub-diagonal" is _survival_.
+
+We could label the rows and columns
+```{r}
+A.with.labels <- A
+dimnames(A.with.labels) <- list(c("to-1", "to-2", "to-3"), c("from-1", "from-2", "from-3"))
+print(A.with.labels)
+```
+Note: This is nice for understanding, but in practice it's usually easier to index using the original index numbers rather than the labels.
+
+To project a population ahead one time interval we multiply a column vector $N(t)$ containing the counts of people in age age group by the projection matrix A, 
+
+$$
+{\bf N(t + n)} = {\bf A} \bf{N(t)}
+$$
+
+Say we start with 100 people in each age group, then in R
+```{r}
+Nt = matrix(c(100,100,100), nrow = 3, ncol = 1)  ## create the column matrix
+print("Nt")
+print(Nt)
+Ntpn = A %*% Nt ## project using matrix multiplication
+print("Ntpn")
+print(Ntpn)
+```
+
+Exercises:
+1. By hand, confirm that the numbers at time t + n in the youngest age group are correct. 
+2. By hand, confirm the numbers at time t + n in the other age groups are correct.
+
+We sometimes call the individuals that come out of the projection "sequent individuals", as this includes both the offspring and the survivors of the original population.
+
+# Finding the stable population by repeated projection
+
+The stable population structure results from holding fertility and mortality constant. We can simulate this by projecting many time steps into the future. 
+
+```{r}
+## start with an empty matrix that we save the popualtion at each time step in
+N.mat <- matrix(NA, nrow = 3, ncol = 11)
+N.mat[,1] <- Nt ## start with 100 in each age group
+
+## loop through 10 time steps
+for (i in 1:10)
+{
+  print(paste("step i = ", i))
+  N.mat[,i+1] <- A %*% N.mat[,i]
+}
+## note, each step we take the last output and use it as the input.
+```
+
+Let's look at the output
+```{r}
+print(N.mat)
+```
+
+Let's see if the fraction in each age group is constant
+```{r}
+c.mat <- prop.table(N.mat, margin = 2) # this looks at the proporitons by column
+print(round(c.mat, 2))
+```
+
+We see that the proportions stop changing and that a population with 46% in the youngest age group, 34% in the middle age group, and 20% in the oldest age group is stable in the sense that if we projected it using $A$, the age structure would stay the same.
+
+We can check if the population after 10 steps is really stable by looking at more decimal places
+```{r}
+print(round(c.mat, 6))
+```
+and we see that there's still some variation in the smallest decimal places.
+
+We can also plot
+
+```{r}
+matplot(t(c.mat), type = "l") ## we transpose c.mat using t() so that matplot does what we want
+text(11 + .2, c.mat[,11], 1:3, col = 1:3) ## we add some age group labels
+```
+The figure helps us to see that in this case the projected population takes about 8 steps to become very nearly stable.
+
+Exercises:
+
+1. Start with a different starting population, say consisting of 40 young, 30 middle aged, and 20 old.
+2. Confirm that the proportions in your new projected population after 10 projection steps are the same as when we started with 100 people in each age group.
+3. Confirm that the rate of growth of any and all age groups after 10 projection steps is also the same as when we started with 100 people in each age group.
+4. Does it take longer or shorter for the population to approach stability with this new age structure? Why do you think this is?
+
+# Stable growth rates
+
+We can calculate the stable growth rates by looking at change in the size of the stable growth rate. Since the age structure is unchanging, we can also just compare the change in the size of a single age group.
+
+```{r}
+young.9 = N.mat[1,9]
+young.10 = N.mat[1,10]
+n <- 25 ## we let the projection step be 25 years, the width of the age groups
+lambda.hat = young.10/young.9
+print("lamda.hat")
+print(lambda.hat) # this is the growth factor from one step to the next
+r.hat = log(lambda.hat)/n # this is the implied exponential growth rate
+print("r.hat")
+print(r.hat)
+```
+
+Exercise:
+
+1. Confirm that the stable growth rate of the population after 10 steps with a different starting population is very nearly identical.
+
+# Stable population as eigen vectors
+
+Population projections of stable age structures retain the stable age structure, but just multiply the counts in age group by a single factor. 
+
+This means that if N_s is a stable population and \lambda is a number (e.g., 1.2) that 
+
+$$ 
+A N_s = \lambda N_s
+$$
+
+On the left we have matrix multiplication, and on the right we have a vector just multiplied by a single, scalar number.
+
+The technical, linear algebra term for the stable population is that it is the (leading) eigen vector of the projection matrix A. The technical term for the scalar equivalent of the projection matrix A is the (leading) eigen value. So, N_s is an eigen vector of A, and \lambda is an eigen vector of A.
+
+The r-function eigen() will give us the eigen values and eigen vectors of the projection matrix.
+
+The leading eigen value is
+```{r}
+lambda.1 = eigen(A)$values[1] ## leading eigen value
+print(lambda.1)
+```
+and the leading eigen vector is
+```{r}
+N.stable = eigen(A)$vectors[,1] ## leading eigen vector
+N.stable <- prop.table(N.stable) ## convert to proportions
+print(round(N.stable,2)) ## inspect
+```
+
+These numbers look remarkably similar to the age-group proportions we got when we repeatedly projected any starting population over and over again. 
+
+Similarly, the growth factor from one step to the net in our simulation gave us growth as $\lambda_1$.
+
+If we want to obtain the stable population and stable growth rate, we can use the eigen values and vectors as a alternative to repeated projection of the matrix.
+
+Exercises:
+
+Take a different projection matrix
+
+A = .5   .5  0
+    1    0   0
+    0    1   0
+    
+1. Using the eigen() function, what is the leading eigen value? 
+
+2. Using the eigen() function, what is the stable age structure? 
+
+3. Use repeated population projection to find the leading eigen vector and value using simulation.
+
+4. Given a projection matrix and an arbitrary population, how could you check if this population was the stable population WITHOUT using the eigen() function? 
+
+
+Congratulations!!! You've finished the pre-lab on population projection using matrices in R.
+

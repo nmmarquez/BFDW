@@ -1,0 +1,163 @@
+---
+title: "Berkeley Formal Demography Workshop 2019, Introductory Lab"
+author: Joshua R. Goldstein
+date: "17 May 2018"
+output: html_notebook
+---
+
+
+# Overview
+
+This is a minimal example for everyone to try to get started using R in the Rstudio nvironment inside an R notebook. 
+
+Our goals in this first lab are:
+
+1. To get everyone started programming and doing labs with R and RStudio.
+
+2. To expose you to a tiny bit of fertility.
+
+> This document is written in the "R markdown" format and should be
+> read and edited within RStudio. The notebook interface allows us to
+> execute and display R-code within a single window. You can edit this
+> notebook directly and save it. We recommend you save it with a
+> different name (e.g., "BFDW_2018_intro_lab_myname.Rmd") to avoid overwriting
+> your edits.
+
+
+Some of you may already know R or another programming language and have already used RStudio. If that's the case, just leap in and do this lab right away. Even if you've never used R or RStudio, it might still be a good idea to go through the lab first and then consult some of the following resources:
+
+* https://cran.r-project.org/doc/contrib/Torfs+Brauer-Short-R-Intro.pdf
+
+This is a quite thorough introduction, for those who like to read.
+
+* Intro to R - YouTube
+www.youtube.com/playlist?list=PLOU2XLYxmsIK9qQfztXeybpHvru-TrqAP
+
+For those who like to sit back and watch ... A very nice set of short ( a few minutes each ) videos created by Google for their programmers. They don't use RStudio, so video 1 might be a bit foreign, but after that they are all great for you.
+
+* Try R - Code School
+http://tryr.codeschool.com/
+
+For those who like to play ... try this interactive way to start out with R.
+
+
+For RStudio and using R Notebooks (like this file), you probably will do best just walking your way through the notebook itself. There is a fair amount about this on the internet but it is often aimed at compiling documents or webpages from the notebooks, whereas we are just going to use the notebooks as a stand-alone. Our notebooks also have a cool feature of auto-graded quiz questions.
+
+# Writing and executing R commands
+
+(Note: In addition to this introduction, you may want to consult "The Rstudio175 cloud server for Demog/Econ C175" by Carl Mason available at the course website [http://courses.demog.berkeley.edu/formaldemography/], which provides additional information for a very similar environment we developed for Berkeley undergrads last semester.]
+
+In the RStudio Notebook, we can write and execute R commands in the
+same document that we are writing text in by creating a "code chunk."
+To open a code chunk, we type ""```{r}" to start. To close the code
+chunk we type "```"" to end. Here are some examples:
+
+To print a string of text:
+```{r}
+print("Hello, world")
+```
+You can hit the green "play" icon to execute the chunk of code. Try modifying the chunk so it prints: "Hello, Berkeley". (Note the [1] just means that it is the first element of the displayed object. You can ignore this.)
+
+To add 2 + 2:
+```{r}
+2+2
+```
+
+To assign the value 4 to a variable named "x":
+```{r}
+x <- 4
+print(x)
+```
+
+The output of a chunk is only shown when you tell it to be. For example,
+```{r}
+x <- 3
+print(x)
+y <- 4
+## note: we don't tell R to show us the value of "y"
+z <- 5
+print(z)
+```
+
+
+Let's calculate a fertility rate. Say there were 10 births to 45 women aged 20-25 in 1987.
+
+```{r}
+nBx = 10
+nKx.female = 45
+nFx = nBx/nKx.female
+print(nFx)
+```
+
+R is a vectorized language. Here as an example using vectors, taken from Keyfitz and Flieger (1968, page 312) for 1851 France.
+
+```{r}
+
+## some data typed in by hand by Josh
+million = 10^6 # to save us typing and to make code more readable
+x <- c(15, 20, 25, 30, 35, 40) # ages at start of each interval, equivalent to 'seq(15, 40, 5)'
+nKx.female.vec = c(1.55, 1.52, 1.44, 1.35, 1.27, 1.17) * million # suffix .vec just for us humans 
+nBx.vec = c(39, 212, 283, 235, 147, 54) * 1000
+
+## now calculate age-specific fertility rates
+nFx.vec <- nBx.vec/nKx.female.vec   # can add, subtract, multiply and divide vectors 
+## (Note this is element by element and not matrix multiplication, which has a different syntax)
+
+## Plot the result
+plot(x = x, y = nFx.vec, 
+     type = "o",   # plotting type "o" means points _o_ver lines (try changing to "p", or "l", or "b" and reclicking the 'play' button for this chunk)
+     ylim = c(0, .25))
+title("Period Age-specific Fertility in France, 1851")
+```
+
+
+Let's do one more example, calculating the TFR in France in 1851. The objects carry over from chunk to chunk. So we can just pick up where we left off ...
+
+```{r}
+n = rep(x = 5, times = length(x)) ## a vector of 5s of the right length
+TFR = sum(n * nFx.vec) ## sum of the vector that results from the product of n * nFx.vec
+print(TFR)
+```
+
+
+Some exercises:
+
+
+1. Create a new chunk and use R to calculate the NRR using the approximation
+
+$$
+NRR = TFR \cdot \ell_\mu \cdot p_{female} 
+$$
+Here's some skeletal code
+```{r}
+NRR = TFR * addsomestuffhere
+print(NRR)
+```
+
+with the survival to the mean age of childbearing $\ell_\mu = 0.58$, the mean age of childbearing $\mu = 29.7$, and the proportion female at birth $p_{female} = 0.4886. (Note if you play with your mouse on top of the equation above -- or try maybe inserting a carriage return -- it should display nicely.)
+
+2. Read the help page for 'plot' in the "Help" tab of the lower-right pane of your Rstudio session. See if you can re-do the graph of age-specific fertility in 1851 France, changing the color of the lines and points to "red" and changing the label on the x-axis to "Age at start of interval". (Hint: the command for how to change the labels of the axes is in the main part of the help page, but for the color you'll have to look under "Examples".)
+
+
+
+3. Answer the following multiple choice question. If the NRR in France were found to be 0.97, does that mean that in 1851 
+
+A. the intrinsic growth rate was less than zero
+
+B. the observed population growth rate was less than zero
+
+C. both of the above
+
+```{r}
+## run this section of code to reveal the answer
+ans <- c("C", " ", "s", 
+         "i", " ", "r", 
+         "e", "w", "s",
+         "n", "a", " ", 
+         "e", "h", "T")
+print(paste0(rev(ans), collapse = ""))
+```
+
+For more on the relationship between the NRR and population growth, section 6.3 of the Wachter book, particularly the final paragraph of this section on page 133.
+
+

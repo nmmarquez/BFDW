@@ -1,0 +1,385 @@
+---
+title: "Gravity Model Project Ideas (with Example Code)"
+author: Neal Marquez
+date: 30 May 2019
+output: html_notebook
+---
+
+# Overview
+
+This notebook contains instructions for the small group project as
+well as a basket of ideas for possible projects. For some of these,
+marked with (*), I've provided some sample code to get you started.
+
+
+# Project Instructions
+
+
+1) Split into groups of 4-6 people. Let's make sure we spread out
+computing expertise among all of the groups. Come up with a cool team
+name.
+
+2) Come up with a project topic. 
+-- Hint 1: Look at the project ideas
+ listed below. 
+-- Hint 2: Raise your hand and call me over to discuss
+ if you want to do something else, or if you have other
+ questions. 
+-- Hint 3: Don't stress. All projects ideas will turn out fine --
+ sometimes we learn the most from things that totally don't work
+ out!
+
+3) Write down a few sentences about what you expect to find (before
+doing any analysis).
+
+4) See if there's any sample analysis with code that would be useful
+to work through in order to get coding ideas for the project your
+group has chosen.
+
+5) Get a good start on the analysis on Wednesday afternoon. We have to
+leave at 4:00 pm sharp to get to the Botanical Garden.
+
+6) On Thursday afternoon, we'll have about 2-3 more hours. In this
+time, you'll want to finalize your analysis and prepare your slide
+presenation.
+
+7) The slide presentation should have about 6 slides. Here's a
+possible template:
+-- Slide 1: Title of project, name of group, group member names
+
+-- Slide 2: Description of project question -- and what you expected
+            to find before doing your analysis.
+-- Slide 3: Your results 
+           (1 slide is great, max is 3 slides of results)
+-- Slide 4: What the audience should take away
+-- Slide 5: What you learned (about modeling? about computing? about
+            human behavior? about migration?)
+
+# Josh's Basket of Project Ideas
+
+-- Project idea number 1: Don't do any new modeling and just draw a
+   bunch of maps and try to make sense of the migration geography of
+   the United States ... What is the "view from Texas"? Or "Iowa"?
+
+-- (*) Project idea number 2: Choose a demographic sub-population and
+   see how demographic distance looks for this group. Is the "view
+   from New York" (demographic distance) the same for men and women,
+   for blacks and whites, for old and young, for rich and poor, for
+   more and less educated, for humanities majors and business majors,
+   ...?  (Hint: do some predictions before you do your
+   analysis). Compare different sub-populations, but not too
+   many. Explore what happens if you change Mj and Mi so that they
+   reflect the sub-populations.
+
+-- (*) An even more specific idea 3: Define Fij as moves by
+   African-Americans, Mi as number of African-Americans in origin
+   state, and Mj as total population in destination state. Create a
+   new variable: % African-American in each state. Add this to the
+   regression and see if it's a predictor. Do you think it will be? Is
+   your expectation fulfilled? How do we interpret the regression
+   output?
+
+-- (*) Project idea 4: Does unemployment drive migration? Include it
+   in the gravity model. We can calculate unemployment rates for each
+   state and merge them with our gravity model data. Then we add
+   unemployment in origin, or destination, or the gap, as as a
+   covariate. See if the effect of unempoloyment depends on whether we
+   use the gravity model.
+
+-- Project idea 5: Include some other state-level covariate that you
+   hypothesize might origin and destinations for migrants.
+
+Even more ideas:
+
+-- 6. Develop a new measure of distance -- e.g. number of border
+   crossings and see if they matter. (Not sure how to calculate the
+   number of border crossings using the computer!)
+
+-- 7. See if regions matter (use census regions and have Rij matrix
+   that takes value 1 if in same region and 0 if not)
+
+-- 8. Figure out more about interpreting the gravity model. Why is
+   coefficient on Mi < 1; why is coefficient on Mj < 1?  Could it have
+   something to do with big states having more square miles?
+
+-- 9. Does distance mean something different East and WEst of the
+   Mississippi? Could one answer this by looking at the coefficient on
+   distance in the gravity model?
+
+# Sample Code
+
+Here I provide some examples that I explored. The idea is not to tell
+you what you must explore. Rather, the goal is to provide you with
+some functioning computer code for doing your own analysis.
+
+Not a bad idea to restart R from within RStudio (Session-->Restart R)
+and load everything up from scratch
+```{r}
+source("project_modeling.R")
+```
+
+## (*) Project idea number 2: Views of other groups
+
+Choose a demographic sub-population and see how demographic distance
+looks for this group. Is the "view from New York" (demographic
+distance) the same for men and women, for blacks and whites, for old
+and young, for rich and poor, for more and less educated, for
+humanities majors and business majors, ...?  (Hint: do some
+predictions before you do your analysis). Compare different
+sub-populations, but not too many. Explore what happens if you change
+Mj and Mi so that they reflect the sub-populations vs. the total
+population.
+
+For example, we might hypothesize that California would be especially
+attractive for New Yorkers who are college graduates. To study this,
+let's fit the gravity model to college graduates only.
+
+### Prepare the data
+```{r}
+## prepare data
+table(dt.clean$educ) ## look at educational categories
+## define a collgrad variabel
+dt.clean[, collgrad := educ %in%
+               c("4 years of college",
+                 "5+ years of college")] ## creates a variable to select on
+## create gravity data with select sub-populations
+new.grav.dt <- create.gravity.data(my.dt = dt.clean[collgrad == TRUE,])
+
+## NOTE: you can change the analysis by redefining this step. For
+## example, if you want to only look at those over age 65
+## > new.grav.dt <- create.gravity.data(my.dt = dt.clean[as.numeric(age) > 65,])
+
+nrow(new.grav.dt) ## should be 50x50 = 2500 rows
+new.grav.dt <- add.distance.variable.to.gravity.data(grav.dt = new.grav.dt)
+print(new.grav.dt) ## check if distance column is there
+```
+
+### Re-estimate model
+
+We use the new data set new.grav.dt and re-estimate the gravity model.
+
+```{r}
+new.m.pois <- glm(
+    Fij ~ 1 + log(Mi) + log(Mj) + log(distance),
+    family = poisson(link = "log"),
+    data = new.grav.dt)
+mtable(new.m.pois, summary.stats = F)
+```
+
+Generate predicted migration numbers
+
+```{r}
+## generate predictions
+new.grav.dt$log.Fij.hat <- predict(new.m.pois, newdata = new.grav.dt)
+new.grav.dt$Fij.hat <- exp(new.grav.dt$log.Fij.hat)
+print(new.grav.dt)
+## let's clean up just a bit to keep easy to read
+new.grav.dt$log.Fij.hat <- NULL
+new.grav.dt$Fij.hat <- round(new.grav.dt$Fij.hat, 1)
+print(new.grav.dt)
+```
+
+```{r}
+## re-look at demographic distance
+new.grav.dt$demographic.distance <- round(new.grav.dt$Fij/new.grav.dt$Fij.hat,2)
+## let's re-look at New York destinations
+new.grav.dt[origin == "new york", .(destination, demographic.distance)][order(demographic.distance)]
+## create vector for mapping
+new.demographic.distance.ny.vec <- new.grav.dt[origin == "new york"]$demographic.distance
+names(new.demographic.distance.ny.vec) <- new.grav.dt[origin == "new york"]$destination
+
+draw.usa.map(new.demographic.distance.ny.vec,
+             main = "'Demographic Distance' of Destinations from New York\n Ratios of observed migration to prediction from gravity model \n college grads only")
+```
+
+> (Josh's note: perspective for college grads looks suprisingly similar as for everyone.)
+
+## (*) An even more specific idea 3
+
+Define Fij as moves by African-Americans, Mi as number of
+African-Americans in origin state, and Mj as total population in
+destination state. Create a new variable: % African-American in each
+state. Add this to the regression and see if it's a predictor. Do you
+think it will be? Is your expectation fulfilled? How do we interpret
+the regression output?
+
+```{r}
+## view race codes
+table(dt.clean$race)
+## define a True/False variable for being African American
+dt.clean$black <- dt.clean$race == "black/african american/negro"
+table(dt.clean$black)
+new.grav.dt <- create.gravity.data(my.dt = dt.clean[black == TRUE,])  ## gravity data with selected sup-population
+```
+
+Up until now, this is like the previous example, but now we're going
+to do something new. We are going to use Mj for total pop. So we
+recreate grav.dt for the total population and merge with the new data
+set.
+
+```{r}
+## recreate grav.dt for the total pop
+grav.dt <- create.gravity.data(my.dt = dt.clean)
+grav.dt <- add.distance.variable.to.gravity.data(grav.dt = grav.dt)
+
+## now we merge the two data sets
+merge.grav.dt <- merge(x = grav.dt,
+                       y = new.grav.dt,
+                       by = c("origin", "destination"))
+## view and see that the names of the variables have suffixes .x and .y
+print(merge.grav.dt)
+## now define our gravity model variables the way we want
+merge.grav.dt$Fij <- merge.grav.dt$Fij.y ## blacks
+merge.grav.dt$Mi <- merge.grav.dt$Mi.y # blacks
+merge.grav.dt$Mj <- merge.grav.dt$Mj.x #total
+
+## create a variable for percentage black in the destination
+merge.grav.dt$perc.black.dest <- 100 *merge.grav.dt$Mj.y/merge.grav.dt$Mj.x
+
+## check by displaying
+merge.grav.dt[, .(origin, destination, perc.black.dest)]
+```
+
+### Re-fit the gravity modelmodel
+
+We now re-fit the gravity model to our newly defined Mi, Mj, Fij,
+ together with the new variable perc.black.dis
+
+```{r}
+m.pois.black <- glm(
+    Fij ~ 1 + log(Mi) + log(Mj) + log(distance) + perc.black.dest,
+    family = poisson(link = "log"),
+    data = merge.grav.dt)
+mtable(m.pois, m.pois.black, summary.stats = F)
+```
+
+## Food for thought
+> 1. Looks like perc black matters but how do we units of coefficients
+>    in terms of elasticity?
+> 2. How could a map help us understand what's going on?
+> 3. What are some alternative modeling strategies? Does it make sense
+>    to use the total population as the Mj? 
+
+
+
+## (*) Project idea 4:  Does unemployment drive migration? 
+
+Include unemployment in the gravity model. We can calculate
+unemployment rates for each state and merge them with our gravity
+model data. Then we add unemployment in origin, or destination, or the
+gap, as as a covariate. See if the effect of unempoloyment depends on
+whether we use the gravity model.
+
+```{r}
+## look at categories for employment status
+table(dt.clean$empstat)
+
+## calculate UE rate by state
+ue.tmp <- dt.clean[, sum(empstat == "unemployed") /
+                     (sum(empstat == "unemployed") +
+                      sum(empstat == "employed")),
+                   by = origin]
+## assign to a single vector
+ue.vec <- ue.tmp$V1
+names(ue.vec) <- ue.tmp$origin
+
+## re-assign back to our gravity data
+grav.dt$origin.ue <- ue.vec[grav.dt$origin]
+grav.dt$destination.ue <- ue.vec[grav.dt$destination]
+```
+
+Now we refit the model
+
+```{r}
+destination.ue.pois <- glm(
+    Fij ~ 1 + log(Mi) + log(Mj) + log(distance) + destination.ue,
+    family = poisson(link = "log"),
+    data = grav.dt)
+mtable(m.pois, destination.ue.pois, summary.stats = "N")
+```
+ UE at destination doesn't seem to matter. Let's try something
+ fancier. The gap between unemployment in destination and
+ origin. We would expect that a negative gap would lead to more
+ immigration, with people migrating to states with lower
+ unemployment.
+ 
+```{r}
+##  calculate gap as : unemployment in dest - unemployment in origin
+grav.dt$ue.gap <- grav.dt$destination.ue - grav.dt$origin.ue
+```
+
+Now re-estimate the model
+```{r}
+gap.ue.pois <- glm(
+    Fij ~ 1 + log(Mi) + log(Mj) + log(distance) + ue.gap,
+    family = poisson(link = "log"),
+    data = grav.dt)
+mtable(m.pois, destination.ue.pois, gap.ue.pois, summary.stats = F)
+```
+
+OK, this seems to be what we expected now. Negative sign here means
+ positive gap --> less migration; negative gap --> more migration.
+ So if virginia has low UE and west virgini has high UE, gap is
+ negative, and more people would move from WV --> VA.
+
+ Let's look at the data again, just to check.
+```{r}
+grav.dt[origin == "west virginia" & destination == "virginia"]
+##           origin destination distance  N Fij    Mi    Mj  origin.ue
+## 1: west virginia    virginia 2.610803 40  40 17727 83631 0.06044609
+##    destination.ue      ue.gap
+## 1:     0.03980423 -0.02064186
+## negative coefficient on gap means we would predict MORE migration
+## from WV-->VA, which makes sense.
+```
+
+Let's redo for origin unemployment
+```{r}
+origin.ue.pois <- glm(
+    Fij ~ 1 + log(Mi) + log(Mj) + log(distance) + origin.ue,
+    family = poisson(link = "log"),
+    data = grav.dt)
+mtable(m.pois, destination.ue.pois, gap.ue.pois, origin.ue.pois,
+       summary.stats = F)
+```
+And separate origin and destination effects
+```{r}
+dest.origin.ue.pois <- glm(
+    Fij ~ 1 + log(Mi) + log(Mj) + log(distance) + origin.ue + destination.ue,
+    family = poisson(link = "log"),
+    data = grav.dt)
+mtable(m.pois, destination.ue.pois, gap.ue.pois, origin.ue.pois, dest.origin.ue.pois,
+       summary.stats = F)
+```
+
+It looks like, in this analysis, that it's only the unemployment rate
+in the origin state that matters. Why might this be?
+
+### Last example with unemployment. 
+
+Let's see how much it matters that we're using gravity model with
+distance and size of destination. We can do this be reestimating
+effect of origin.ue on a model that leaves out distance and
+destination pop size.
+
+```{r}
+
+origin.ue.reduced<- glm(
+    Fij ~ 1 + log(Mi) + origin.ue, ## note: we have no log(Mj) and no log(distance)
+    family = poisson(link = "log"),
+    data = grav.dt)
+mtable(origin.ue.pois, origin.ue.reduced, summary.stats = "N")
+```
+
+Wow. This seems to give us some motivation for using the gravity
+model. If we didn't include distance and size of destination, and only
+looked at out-migration rates by unemployment level, we would think
+that unemployment had little or no effect.
+
+# Congratulations!!! 
+
+> You've scrolled (and perhaps even worked part of the way) to the end
+> of example code for the small group projects.
+
+
+
