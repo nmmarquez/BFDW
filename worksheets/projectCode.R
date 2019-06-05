@@ -10,6 +10,7 @@ library(httr) # to pull data from wiki
 library(sf) # for making pretty maps
 library(XML) # more webscraping tools 
 library(leaflet) # making interactive maps
+library(stargazer)
 
 # load demography functions
 source("https://courses.demog.berkeley.edu/_formaldemog2019/Labs/project_map_functions.R")
@@ -69,4 +70,22 @@ grav.dt <- as_tibble(add.distance.variable.to.gravity.data(grav.dt1)) %>%
     mutate(destination=stringr::str_to_title(destination)) %>%
     left_join(rename(urbpDF, origin=State, opUrban=pUrban)) %>%
     left_join(rename(urbpDF, destination=State, dpUrban=pUrban)) %>%
-    mutate(uMi=Mi*opUrban, dMi=Mj*dpUrban)
+    mutate(uMi=Mi*opUrban*.01, uMj=Mj*dpUrban*.01)
+
+write.csv(grav.dt, file="./data/gravdt.csv")
+
+# Models to test 
+
+modelList <- list(
+    base = Fij ~ 1 + log(Mi) + log(Mj) + log(distance),
+    urbanReplace = Fij ~ 1 + log(uMi) + log(uMj) + log(distance),
+    urbanPCov = Fij ~ 1 + log(Mi) + log(Mj) + log(distance) + log(opUrban) + log(dpUrban),
+    urbanNCov = Fij ~ 1 + log(Mi) + log(Mj) + log(distance) + log(uMi) + log(uMj)
+)
+
+m.pois <- lapply(modelList, glm, family=poisson(link = "log"), 
+                 data = grav.dt)
+
+test <- glm(rating ~ learning + critical + advance, data=attitude)
+
+stargazer(m.pois$base)
