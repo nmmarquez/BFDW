@@ -11,6 +11,7 @@ library(sf) # for making pretty maps
 library(XML) # more webscraping tools 
 library(leaflet) # making interactive maps
 library(stargazer)
+library(circlize)
 
 # load demography functions
 source("https://courses.demog.berkeley.edu/_formaldemog2019/Labs/project_map_functions.R")
@@ -56,7 +57,9 @@ urbpDF <- paste0(
     mutate(pUrban=as.numeric(sub("%", "", pUrban))) %>%
     mutate(State=sub("[[:digit:]]+", "", State)) %>%
     mutate(State=sub("\\[", "", State)) %>%
-    mutate(State=sub("\\]", "", State))
+    mutate(State=sub("\\]", "", State)) %>%
+    mutate(urbanQ=cut_number(
+        pUrban, 4, labels=c("Very Low", "Low", "Hi", "Very Hi"))) 
 
 # cl
 dt.clean <- clean.acs.data(indiv.dt = dt)
@@ -68,9 +71,10 @@ nrow(grav.dt1) ## should be 50x50 = 2500 rows
 grav.dt <- as_tibble(add.distance.variable.to.gravity.data(grav.dt1)) %>%
     mutate(origin=stringr::str_to_title(origin)) %>%
     mutate(destination=stringr::str_to_title(destination)) %>%
-    left_join(rename(urbpDF, origin=State, opUrban=pUrban)) %>%
-    left_join(rename(urbpDF, destination=State, dpUrban=pUrban)) %>%
-    mutate(uMi=Mi*opUrban*.01, uMj=Mj*dpUrban*.01)
+    left_join(rename(select(urbpDF, -urbanQ), origin=State, opUrban=pUrban)) %>%
+    left_join(rename(select(urbpDF, -urbanQ), destination=State, dpUrban=pUrban)) %>%
+    mutate(uMi=Mi*opUrban*.01, uMj=Mj*dpUrban*.01) %>%
+    mutate(uR=uMi/uMj, uD=uMi-uMj)
 
 write.csv(grav.dt, file="./data/gravdt.csv")
 
@@ -80,12 +84,41 @@ modelList <- list(
     base = Fij ~ 1 + log(Mi) + log(Mj) + log(distance),
     urbanReplace = Fij ~ 1 + log(uMi) + log(uMj) + log(distance),
     urbanPCov = Fij ~ 1 + log(Mi) + log(Mj) + log(distance) + log(opUrban) + log(dpUrban),
-    urbanNCov = Fij ~ 1 + log(Mi) + log(Mj) + log(distance) + log(uMi) + log(uMj)
+    urbanRatioCov = Fij ~ 1 + log(Mi) + log(Mj) + log(distance) + log(uR)
 )
 
-m.pois <- lapply(modelList, glm, family=poisson(link = "log"), 
-                 data = grav.dt)
+m.pois <- lapply(modelList, function(f){
+    glm(f, family=poisson(link = "log"), data = grav.dt)
+    })
 
-test <- glm(rating ~ learning + critical + advance, data=attitude)
+stargazer(m.pois)
 
-stargazer(m.pois$base)
+# We are gonna make a midnight drunk attempt on making a deent looking chord diagram
+grav.dt
+
+grav.dt %>%
+    left_join(rename(select(urbpDF, -pUrban), destination=State, dUrbanQ=urbanQ)) %>%
+    left_join(rename(select(urbpDF, -pUrban), origin=State, oUrbanQ=urbanQ)) %>%
+    group_by(dUrbanQ, oUrbanQ) %>%
+    summarize(Fij=sum(Fij, na.rm=T)) %>%
+    chordDiagram()
+
+grav.dt %>%
+    left_join(rename(select(urbpDF, -pUrban), destination=State, dUrbanQ=urbanQ)) %>%
+    left_join(rename(select(urbpDF, -pUrban), origin=State, oUrbanQ=urbanQ)) %>%
+    group_by(dUrbanQ, oUrbanQ) %>%
+    summarize(Fij=sum(Fij, na.rm=T)) %>%
+    mutate(HI=grepl("Hi", dUrbanQ) & grepl("Hi", oUrbanQ)) %>%
+    group_by(HI) %>%
+    summarize(Fij=sum(Fij)) %>%
+    mutate(pF=Fij/sum(Fij))
+
+# What is the expeted value here??? This isnt right
+grav.dt %>%
+    left_join(rename(select(urbpDF, -pUrban), destination=State, dUrbanQ=urbanQ)) %>%
+    left_join(rename(select(urbpDF, -pUrban), origin=State, oUrbanQ=urbanQ)) %>%
+    filter(origin == destination) %>%
+    mutate(HI=grepl("Hi", dUrbanQ) & grepl("Hi", oUrbanQ)) %>%
+    group_by(HI) %>%
+    summarize(Mi=sum(Mi)) %>%
+    mutate(pPop=Mi/sum(Mi))
